@@ -21,6 +21,7 @@ struct signalInfo {
 
 int getSignalInfo(struct signalInfo *sigInfo, char *iwname);
 int set_essid(int sock, const char *ifname, const char *essid);
+int getRSSI(char *iwname);
 
 int main(int argc, char *argv[])
 {
@@ -29,6 +30,17 @@ int main(int argc, char *argv[])
   struct timespec ts, time;
   int result;
   
+  ts.tv_sec = 0;
+  ts.tv_nsec = 100 * 1000000;
+
+ 
+  while(1){
+	result = getRSSI("wlp1s0");
+	printf("result : %d\n", result);   
+
+    nanosleep(&ts, NULL);
+  }
+/* 
   while (1) {
     result = getSignalInfo(&sig, "wlx909f330dc15b");
 
@@ -43,7 +55,7 @@ int main(int argc, char *argv[])
 
     nanosleep(&ts, NULL);
   }
-
+*/
 /*
 	int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
 	set_essid(sockfd, "wlp1s0", "Android");
@@ -51,6 +63,44 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
+int getRSSI(char *iwname){
+	struct iwreq req;							// wireless request struct
+    struct iw_statistics *stats;
+	
+	int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+	
+	strcpy(req.ifr_name, iwname);				// copy wireless interface name
+
+	req.u.data.pointer = (struct iw_statistics *)malloc(sizeof(struct iw_statistics));
+    req.u.data.length = sizeof(struct iw_statistics);
+
+	if(ioctl(sockfd, SIOCGIWSTATS, &req) == -1){ 
+		return -1;		//off or disconnected, or invaild name
+	}
+	else if(((struct iw_statistics *)req.u.data.pointer)->qual.updated & IW_QUAL_DBM){
+        return ((struct iw_statistics *)req.u.data.pointer)->qual.level - 256;		//signal level (dBm)
+    }
+
+	close(sockfd);
+}
+
+
+//SIOCGIWRATE for bits/sec (convert to mbit)
+int getMbitRate(char *iwname){
+	struct iwreq req;							// wireless request struct
+	int sockfd = socket(AF_INET, SOCK_DGRAM, 0);	
+    int bitrate=-1;
+
+    //this will get the bitrate of the link
+    if(ioctl(sockfd, SIOCGIWRATE, &req) == -1){
+        fprintf(stderr, "bitratefail");
+        return(-1);
+    }else{
+        memcpy(&bitrate, &req.u.bitrate, sizeof(int));
+        return bitrate/1000000;
+    }
+
+}
 
 int getSignalInfo(struct signalInfo *sigInfo, char *iwname){
     struct iwreq req;
@@ -68,15 +118,12 @@ int getSignalInfo(struct signalInfo *sigInfo, char *iwname){
     //this will gather the signal strength
     if(ioctl(sockfd, SIOCGIWSTATS, &req) == -1){
         //die with error, invalid interface
-		printf(  "stat : %u\n", ((struct iw_statistics *)req.u.data.pointer)->status );
         fprintf(stderr, "Invalid interface.\n");
         return(-1);
     }
     else if(((struct iw_statistics *)req.u.data.pointer)->qual.updated & IW_QUAL_DBM){
         //signal is measured in dBm and is valid for us to use
         sigInfo->level=((struct iw_statistics *)req.u.data.pointer)->qual.level - 256;
-
-		printf(  "stat : %u\n", ((struct iw_statistics *)req.u.data.pointer)->status );
     }
 
     //SIOCGIWESSID for ssid
@@ -138,6 +185,4 @@ int set_essid(int sock, const char *ifname, const char *essid){
 	if(ret < 0) printf("ERROR\n");
 
 	return ret;
-	
-
 }
